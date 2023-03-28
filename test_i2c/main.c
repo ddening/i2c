@@ -29,6 +29,12 @@
 *
 *************************************************************************/
 
+/* Define CPU frequency in Hz here if not defined in Makefile */
+#ifndef F_CPU
+#define F_CPU 8000000UL
+#endif
+
+/* General libraries */
 #include <avr/io.h>
 #include <avr/wdt.h>
 #include <avr/interrupt.h>
@@ -37,23 +43,35 @@
 #include <stdint.h>
 #include <stdio.h>
 
+/* User defined libraries */
 #include "suite.h"
 #include "i2c.h"
 #include "uart.h"
 #include "led_lib.h"
-
-/* Define CPU frequency in Hz here if not defined in Makefile */
-#ifndef F_CPU
-#define F_CPU 8000000UL
-#endif
 	
 static device_t* i2c_device;
+
+static uint8_t dummy_payload[] = {1, 2, 3, 4, 5 };
+
+static int run_i2c_payload_test(const struct test_case* test){
+    
+    uint8_t* data = (uint8_t*)malloc(sizeof(uint8_t) * ARRAY_LEN(dummy_payload));
+    
+    if (data == NULL) {
+        return TEST_ERROR;
+    }
+    
+    payload_t* payload = payload_create_i2c(PRIORITY_NORMAL, i2c_device, data, ARRAY_LEN(dummy_payload), NULL);
+    
+    free(data);
+    
+    return TEST_PASS;
+}
 
 static int run_i2c_memory_leak_test(const struct test_case* test) {
     
     return TEST_PASS;
 }
-
     
 int main(void) {
     
