@@ -49,11 +49,19 @@
 #include "uart.h"
 #include "led_lib.h"
 	
+#define I2C_DEVICE_ADDR 12345    
+    
 static device_t* i2c_device;
 
-static uint8_t dummy_payload[] = {1, 2, 3, 4, 5 };
+static uint8_t dummy_payload[] = { 1, 2, 3, 4, 5 };
 
 static int run_i2c_payload_test(const struct test_case* test){
+    
+    i2c_device = i2c_create_device(I2C_DEVICE_ADDR);
+    
+    if (i2c_device == NULL) {
+        return TEST_ERROR;
+    }
     
     uint8_t* data = (uint8_t*)malloc(sizeof(uint8_t) * ARRAY_LEN(dummy_payload));
     
@@ -63,8 +71,29 @@ static int run_i2c_payload_test(const struct test_case* test){
     
     payload_t* payload = payload_create_i2c(PRIORITY_NORMAL, i2c_device, data, ARRAY_LEN(dummy_payload), NULL);
     
-    free(data);
+    if (payload->priority != PRIORITY_NORMAL                                ||
+        payload->protocol.i2c.device->address != I2C_DEVICE_ADDR            ||
+        payload->protocol.i2c.number_of_bytes != ARRAY_LEN(dummy_payload)   ||
+        payload->protocol.i2c.callback != NULL) {
+            free(data);
+            free(payload);
+            free(i2c_device);
+            return TEST_FAIL;
+        }
+        
+    /* Check data content */
+    for (uint8_t i = 0; i < ARRAY_LEN(dummy_payload); i++) {
+        if (payload->protocol.i2c.data[i] != dummy_payload[i]){
+            free(data);
+            free(payload);
+            free(i2c_device);
+            return TEST_FAIL;
+        }
+    }
     
+    free(data);
+    free(payload);
+    free(i2c_device);  
     return TEST_PASS;
 }
 

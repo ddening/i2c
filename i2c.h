@@ -45,9 +45,6 @@
 /* Describes a i2c device */
 typedef struct device_t {
     uint8_t address;
-    uint8_t pin;
-    uint8_t port;
-    uint8_t ddr;
 } device_t;
 
 i2c_error_t i2c_init(i2c_config_t*);
@@ -55,6 +52,8 @@ i2c_error_t i2c_init(i2c_config_t*);
 i2c_error_t i2c_read(void);
 
 i2c_error_t i2c_write(payload_t*);
+
+device_t* i2c_create_device(uint8_t address);
 
 extern payload_t* payload_create_i2c(priority_t priority, device_t* device, uint8_t* data, uint8_t number_of_bytes, callback_fn* callback);
 

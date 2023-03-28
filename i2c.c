@@ -57,3 +57,16 @@ i2c_error_t i2c_read(void){
 i2c_error_t i2c_write(payload_t* _payload){   
     return I2C_NO_ERROR;
 }
+
+device_t* i2c_create_device(uint8_t address){
+    
+    device_t* device = malloc(sizeof(device_t));
+    
+    if (device == NULL) {
+        return NULL;
+    }
+    
+    device->address = address;
+    
+    return device;
+}
