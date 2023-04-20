@@ -35,6 +35,7 @@
 /* User defined libraries */
 #include "i2c.h"
 #include "utils.h"
+#include "uart.h"
 
 /* I2C TWSR FLAGS */
 #define I2C_START		0x08
@@ -92,6 +93,8 @@ i2c_error_t i2c_init(i2c_config_t* config){
     
     TWCR = (0 << TWINT) | (0 << TWEA) | (0 << TWSTA) | (0 << TWSTO) | (0 << TWWC) | (1 << TWEN) | (0 << TWIE);
     
+    I2C_STATE = I2C_INACTIVE;
+    
     queue = queue_init(&q);
     
     return I2C_NO_ERROR;
@@ -105,6 +108,8 @@ i2c_error_t _i2c(){
         
         I2C_STATE = I2C_ACTIVE;
         
+        uart_put("START");
+        
         I2C_SEND_START();      
     }
     
@@ -113,7 +118,7 @@ i2c_error_t _i2c(){
 
 i2c_error_t i2c_read(payload_t* _payload){   
     
-    _payload->protocol.i2c.device->address = (_payload->protocol.i2c.device->address << 1) | 0x01; 
+    // _payload->protocol.i2c.device->address = (_payload->protocol.i2c.device->address << 1) | 0x01; 
     
     return I2C_NO_ERROR;
 }
@@ -122,7 +127,7 @@ i2c_error_t i2c_write(payload_t* _payload){
     
     i2c_error_t err;
     
-    _payload->protocol.i2c.device->address = (_payload->protocol.i2c.device->address << 1) | 0x00; 
+    //_payload->protocol.i2c.device->address = (_payload->protocol.i2c.device->address << 1) | 0x00; 
     
     err = queue_enqueue(queue, _payload);
     
@@ -159,13 +164,15 @@ ISR(TWI_vect){
     switch(TWSR & I2C_NO_STATE) {
         case I2C_START:
         case I2C_REP_START: {
-            TWDR = payload->protocol.i2c.device->address; // Load SLA+W
+            uart_put("ADDR: %i", payload->protocol.i2c.device->address);
+            TWDR = ((payload->protocol.i2c.device->address << 1) | 0x00);
             I2C_SEND_TRANSMIT();
             break;
         }
           
         /* Address received by device -> ACK -> OK */ 
-        case I2C_MASTER_TX_ADDR_ACK: {        
+        case I2C_MASTER_TX_ADDR_ACK: { 
+            uart_put("DATA");       
             TWDR = *(payload->protocol.i2c.data); // Load Data
             I2C_SEND_TRANSMIT();
             break;
@@ -173,7 +180,8 @@ ISR(TWI_vect){
              
         /* Address NOT received by device -> NACK -> NOT OK -> Cleanup + STOP (?)
            -> Start error routine and/or load next job from buffer and skip this job */
-        case I2C_MASTER_TX_ADDR_NACK: {         
+        case I2C_MASTER_TX_ADDR_NACK: {   
+            uart_put("NACK");      
             I2C_STATE = I2C_INACTIVE;
             I2C_SEND_STOP();
             payload_free_i2c(payload);
@@ -182,7 +190,7 @@ ISR(TWI_vect){
             
         /* Data received by device -> ACK -> OK -> STOP transmission */
         case I2C_MASTER_TX_DATA_ACK: {
-                      
+            uart_put("DATA");    
             payload->protocol.i2c.number_of_bytes--;
             
             (payload->protocol.i2c.data)++;
@@ -191,6 +199,7 @@ ISR(TWI_vect){
                 TWDR = *(payload->protocol.i2c.data);
                 I2C_SEND_TRANSMIT();          
             } else {
+                uart_put("DONE");
                 I2C_STATE = I2C_INACTIVE;
                 I2C_SEND_STOP();
             }
@@ -200,7 +209,8 @@ ISR(TWI_vect){
         /*  Data NOT received by device -> NACK -> NOT OK
             -> STOP transmission OR REPEAT START and try to send data again (?)
             -> Start error routine */
-        case I2C_MASTER_TX_DATA_NACK: {   
+        case I2C_MASTER_TX_DATA_NACK: { 
+            uart_put("NACK");  
             I2C_STATE = I2C_INACTIVE;
             I2C_SEND_STOP();
             payload_free_i2c(payload);
@@ -208,6 +218,7 @@ ISR(TWI_vect){
         }
               
         case I2C_BUS_ERROR: {
+           uart_put("ERROR");
            I2C_STATE = I2C_INACTIVE;
            I2C_SEND_STOP();
            payload_free_i2c(payload);
@@ -215,10 +226,14 @@ ISR(TWI_vect){
         }
         
         case I2C_NO_STATE: {
+            uart_put("NO STATE");
             break;
         }
         
         default: {
+            uart_put("DEFAULT");
+            I2C_STATE = I2C_INACTIVE;
+            I2C_SEND_STOP();
             break;
         }            
     }
