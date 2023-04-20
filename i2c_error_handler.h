@@ -3,7 +3,7 @@
 * Author	: Dimitri Dening
 * Created	: 22.12.2022
 * Software	: Microchip Studio V7
-* Hardware	: Atmega1284P
+* Hardware	: Atmega2560
 * License	: MIT License
 * Usage		: see Doxygen manual
 *

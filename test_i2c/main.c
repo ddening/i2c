@@ -31,7 +31,7 @@
 
 /* Define CPU frequency in Hz here if not defined in Makefile */
 #ifndef F_CPU
-#define F_CPU 8000000UL
+#define F_CPU 10000000UL
 #endif
 
 /* General libraries */
@@ -113,9 +113,7 @@ int main(void) {
 	i2c_init(&i2c_config);
 	
 	sei();
-	
-	// i2c_device = i2c_create_device();
-    	
+  	
 	DEFINE_TEST_CASE(i2c_memory_leak_test, NULL, run_i2c_memory_leak_test, NULL, "I2C memory leak test");
 
 	/* Put test case addresses in an array */

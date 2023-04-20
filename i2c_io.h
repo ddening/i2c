@@ -3,7 +3,7 @@
 * Author	: Dimitri Dening
 * Created	: 22.12.2022
 * Software	: Microchip Studio V7
-* Hardware	: Atmega1284P
+* Hardware	: Atmega2560
 * License	: MIT License
 * Usage		: see Doxygen manual
 *
@@ -51,7 +51,9 @@ Extend this file according to the datasheet of your MCU.
 
 /* I2C Port Declaration */
 #if defined(__AVR_ATmega1284P__) || defined(__AVR_ATmega16__)
-
+#elif defined(__AVR_ATmega2560__)
+#   define SDA PD1
+#   define SCL PD0
 #else
 #  if !defined(__COMPILING_AVR_LIBC__)
 #    warning "ATmega1284P or ATmega16 not found"
