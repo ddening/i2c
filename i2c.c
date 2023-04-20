@@ -39,10 +39,11 @@
 /* I2C TWSR FLAGS */
 #define I2C_START		0x08
 #define I2C_REP_START	0x10
-#define I2C_ARB_LOST	0x38
 
 #define I2C_MASTER_TX_ADDR_ACK  0x18  // SLA+W transmitted and ACK received
 #define I2C_MASTER_TX_ADDR_NACK 0x20  // SLA+W transmitted and NACK received
+#define I2C_ARB_LOST	        0x38
+
 #define I2C_MASTER_TX_DATA_ACK  0x28  // Data transmitted and ACK received
 #define I2C_MASTER_TX_DATA_NACK 0x30  // Data transmitted and NACK received
 
@@ -56,11 +57,11 @@
 
 /* I2C Protocol Macros */
 #define I2C_TWCR_INIT()     (TWCR = (1 << TWEN)|(0 << TWIE)|(0 << TWINT)|(0 << TWEA)|(0 << TWSTA)|(0 << TWSTO)|(0 << TWWC))
-#define I2C_SEND_START()    (TWCR = (1 << TWINT)|(1 << TWSTA)|(1 << TWEN)|(1 << TWIE))
-#define I2C_SEND_STOP()     (TWCR = (1 << TWINT)|(1 << TWSTO)|(1 << TWEN)|(0 << TWIE))
+#define I2C_SEND_START()    (TWCR = (1 << TWINT)|(1 << TWSTA)|(0 << TWSTO)|(1 << TWEN)|(1 << TWIE))
+#define I2C_SEND_STOP()     (TWCR = (1 << TWINT)|(0 << TWSTA)|(1 << TWSTO)|(1 << TWEN)|(0 << TWIE))
+#define I2C_SEND_TRANSMIT() (TWCR = (1 << TWINT)|(0 << TWSTA)|(0 << TWSTO)|(1 << TWEN)|(1 << TWIE))
 #define I2C_SEND_ACK()      (TWCR = (1 << TWINT)|(1 << TWEN)|(1 << TWIE)|(1 << TWEA))
 #define I2C_SEND_NACK()     (TWCR = (1 << TWINT)|(1 << TWEN)|(1 << TWIE))
-#define I2C_SEND_TRANSMIT() (TWCR = (1 << TWINT)|(1 << TWEN)|(1 << TWIE))
 
 static queue_t q;
 
@@ -78,8 +79,11 @@ i2c_error_t i2c_init(i2c_config_t* config){
     
     /* Define Bit Genereator Unit */
     uint16_t scl_frequency = F_CPU / ( 16 + (2 * TWBR) + 4^(TWPS0) ); //TWPS := Prescaler
-    TWBR = 1;
-    TWSR = 1; 
+       
+    TWBR = 0x5C; // Target Frequency := 50kHz -> TWBR = 92 = 0x5C, with F_CPU=10MHz
+    TWSR |= (0 << TWPS1) | (0 << TWPS0); // Set Prescaler To 1 
+    
+    TWCR = (0 << TWINT) | (0 << TWEA) | (0 << TWSTA) | (0 << TWSTO) | (0 << TWWC) | (1 << TWEN) | (0 << TWIE);
     
     queue = queue_init(&q);
     
@@ -124,39 +128,52 @@ i2c_error_t i2c_free_device(device_t* device){
 
 ISR(TWI_vect){
     
-    // write or read data to/from TWDR
-    
-    // use TWSR to check (N)ACK
-    
-    switch(TWSR) {
+    // Mask the prescaler bits to zero   
+    switch(TWSR & I2C_NO_STATE) {
         case I2C_START:
         case I2C_REP_START:
-        // Load SLA+W into TWDR and start transmission 
+        TWDR = 0xff; // Load SLA+W
+        I2C_SEND_START();
         break;
         
         case I2C_MASTER_TX_ADDR_ACK: 
         // Address received by device -> ACK -> OK
-        // Load data into TWDR and start transmission
+        TWDR = 0xff; // Load Data
+        I2C_SEND_TRANSMIT();
+        
         break;
         
         case I2C_MASTER_TX_ADDR_NACK: 
         // Address NOT received by device -> NACK -> NOT OK
         // -> Cleanup + STOP (?)
-        // -> Start error routine
+        // -> Start error routine and/or load next job from buffer and skip this job
+        I2C_SEND_STOP();
+        payload_free_i2c(payload);
         break;
         
         case I2C_MASTER_TX_DATA_ACK:   
         // Data received by device -> ACK -> OK
         // -> STOP transmission
+            if (payload->protocol.i2c.number_of_bytes != 0) {
+                // load next byte 
+                payload->protocol.i2c.number_of_bytes--;
+            } else {
+               I2C_SEND_STOP(); 
+            }
         break;
         
         case I2C_MASTER_TX_DATA_NACK: 
         // Data NOT received by device -> NACK -> NOT OK
         // -> STOP transmission OR REPEAT START and try to send data again (?)
         // -> Start error routine
+        I2C_SEND_STOP();
+        payload_free_i2c(payload);
         break;
         
-        case I2C_BUS_ERROR: break;
+        case I2C_BUS_ERROR: 
+            I2C_SEND_STOP();
+            payload_free_i2c(payload);
+            break;
         case I2C_NO_STATE: break;
         
         default: break;
