@@ -49,7 +49,7 @@
 #include "uart.h"
 #include "led_lib.h"
 	
-#define I2C_DEVICE_ADDR 12345    
+#define I2C_DEVICE_ADDR 0x27    
     
 static device_t* i2c_device;
 
@@ -98,6 +98,12 @@ static int run_i2c_payload_test(const struct test_case* test){
 }
 
 static int run_i2c_memory_leak_test(const struct test_case* test) {
+    
+    i2c_device = i2c_create_device(I2C_DEVICE_ADDR);
+       
+    payload_t* payload = payload_create_i2c(PRIORITY_NORMAL, i2c_device, dummy_payload, ARRAY_LEN(dummy_payload), NULL);
+    
+    i2c_write(payload);
     
     return TEST_PASS;
 }

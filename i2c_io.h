@@ -56,7 +56,7 @@ Extend this file according to the datasheet of your MCU.
 #   define SCL PD0
 #else
 #  if !defined(__COMPILING_AVR_LIBC__)
-#    warning "ATmega1284P or ATmega16 not found"
+#    warning "I2C PORTS NOT DEFINED"
 #  endif
 #endif
 

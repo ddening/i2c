@@ -63,6 +63,13 @@
 #define I2C_SEND_ACK()      (TWCR = (1 << TWINT)|(1 << TWEN)|(1 << TWIE)|(1 << TWEA))
 #define I2C_SEND_NACK()     (TWCR = (1 << TWINT)|(1 << TWEN)|(1 << TWIE))
 
+typedef enum {
+    I2C_ACTIVE,
+    I2C_INACTIVE
+} I2C_STATE_T;
+
+static I2C_STATE_T I2C_STATE;
+
 static queue_t q;
 
 static queue_t* queue = NULL;
@@ -90,16 +97,36 @@ i2c_error_t i2c_init(i2c_config_t* config){
     return I2C_NO_ERROR;
 }
 
+i2c_error_t _i2c(){
+    
+    if (I2C_STATE == I2C_INACTIVE) {
+        
+        payload = queue_dequeue(queue);
+        
+        I2C_STATE = I2C_ACTIVE;
+        
+        I2C_SEND_START();      
+    }
+    
+    return I2C_NO_ERROR;
+}
+
 i2c_error_t i2c_read(payload_t* _payload){   
     
-    _payload->protocol.i2c.device->address = _payload->protocol.i2c.device->address | 0x01; 
+    _payload->protocol.i2c.device->address = (_payload->protocol.i2c.device->address << 1) | 0x01; 
     
     return I2C_NO_ERROR;
 }
 
 i2c_error_t i2c_write(payload_t* _payload){   
     
-    payload->protocol.i2c.device->address = payload->protocol.i2c.device->address | 0x00; 
+    i2c_error_t err;
+    
+    _payload->protocol.i2c.device->address = (_payload->protocol.i2c.device->address << 1) | 0x00; 
+    
+    err = queue_enqueue(queue, _payload);
+    
+    err = _i2c();
     
     return I2C_NO_ERROR;
 }
@@ -112,7 +139,7 @@ device_t* i2c_create_device(uint8_t address){
         return NULL;
     }
     
-    device->address = address << 1; // First 7 bits describe the device address. Last bit := Read/Write
+    device->address = address; // First 7 bits describe the device address. Last bit := Read/Write
     
     return device;
 }
@@ -128,54 +155,71 @@ i2c_error_t i2c_free_device(device_t* device){
 
 ISR(TWI_vect){
     
-    // Mask the prescaler bits to zero   
+    /* Mask the prescaler bits to zero */
     switch(TWSR & I2C_NO_STATE) {
         case I2C_START:
-        case I2C_REP_START:
-        TWDR = 0xff; // Load SLA+W
-        I2C_SEND_START();
-        break;
-        
-        case I2C_MASTER_TX_ADDR_ACK: 
-        // Address received by device -> ACK -> OK
-        TWDR = 0xff; // Load Data
-        I2C_SEND_TRANSMIT();
-        
-        break;
-        
-        case I2C_MASTER_TX_ADDR_NACK: 
-        // Address NOT received by device -> NACK -> NOT OK
-        // -> Cleanup + STOP (?)
-        // -> Start error routine and/or load next job from buffer and skip this job
-        I2C_SEND_STOP();
-        payload_free_i2c(payload);
-        break;
-        
-        case I2C_MASTER_TX_DATA_ACK:   
-        // Data received by device -> ACK -> OK
-        // -> STOP transmission
-            if (payload->protocol.i2c.number_of_bytes != 0) {
-                // load next byte 
-                payload->protocol.i2c.number_of_bytes--;
-            } else {
-               I2C_SEND_STOP(); 
-            }
-        break;
-        
-        case I2C_MASTER_TX_DATA_NACK: 
-        // Data NOT received by device -> NACK -> NOT OK
-        // -> STOP transmission OR REPEAT START and try to send data again (?)
-        // -> Start error routine
-        I2C_SEND_STOP();
-        payload_free_i2c(payload);
-        break;
-        
-        case I2C_BUS_ERROR: 
+        case I2C_REP_START: {
+            TWDR = payload->protocol.i2c.device->address; // Load SLA+W
+            I2C_SEND_TRANSMIT();
+            break;
+        }
+          
+        /* Address received by device -> ACK -> OK */ 
+        case I2C_MASTER_TX_ADDR_ACK: {        
+            TWDR = *(payload->protocol.i2c.data); // Load Data
+            I2C_SEND_TRANSMIT();
+            break;
+        }
+             
+        /* Address NOT received by device -> NACK -> NOT OK -> Cleanup + STOP (?)
+           -> Start error routine and/or load next job from buffer and skip this job */
+        case I2C_MASTER_TX_ADDR_NACK: {         
+            I2C_STATE = I2C_INACTIVE;
             I2C_SEND_STOP();
             payload_free_i2c(payload);
             break;
-        case I2C_NO_STATE: break;
+        }
+            
+        /* Data received by device -> ACK -> OK -> STOP transmission */
+        case I2C_MASTER_TX_DATA_ACK: {
+                      
+            payload->protocol.i2c.number_of_bytes--;
+            
+            (payload->protocol.i2c.data)++;
+            
+            if (payload->protocol.i2c.number_of_bytes != 0) {
+                TWDR = *(payload->protocol.i2c.data);
+                I2C_SEND_TRANSMIT();          
+            } else {
+                I2C_STATE = I2C_INACTIVE;
+                I2C_SEND_STOP();
+            }
+            break;
+        }
+           
+        /*  Data NOT received by device -> NACK -> NOT OK
+            -> STOP transmission OR REPEAT START and try to send data again (?)
+            -> Start error routine */
+        case I2C_MASTER_TX_DATA_NACK: {   
+            I2C_STATE = I2C_INACTIVE;
+            I2C_SEND_STOP();
+            payload_free_i2c(payload);
+            break;
+        }
+              
+        case I2C_BUS_ERROR: {
+           I2C_STATE = I2C_INACTIVE;
+           I2C_SEND_STOP();
+           payload_free_i2c(payload);
+           break; 
+        }
         
-        default: break;
+        case I2C_NO_STATE: {
+            break;
+        }
+        
+        default: {
+            break;
+        }            
     }
 }
