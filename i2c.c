@@ -38,26 +38,22 @@
 #include "uart.h"
 
 /* I2C TWSR FLAGS */
-#define I2C_START		0x08
-#define I2C_REP_START	0x10
-
+#define I2C_START				0x08
+#define I2C_REP_START			0x10
 #define I2C_MASTER_TX_ADDR_ACK  0x18  // SLA+W transmitted and ACK received
 #define I2C_MASTER_TX_ADDR_NACK 0x20  // SLA+W transmitted and NACK received
-#define I2C_ARB_LOST	        0x38
-
 #define I2C_MASTER_TX_DATA_ACK  0x28  // Data transmitted and ACK received
 #define I2C_MASTER_TX_DATA_NACK 0x30  // Data transmitted and NACK received
-
+#define I2C_ARB_LOST			0x38  // Arbitration lost in SLA+W or data bytes
 #define I2C_MASTER_RX_ADDR_ACK  0x40  // SLA+R transmitted and ACK received
 #define I2C_MASTER_RX_ADDR_NACK 0x48  // SLA+R transmitted and NACK received
 #define I2C_MASTER_RX_DATA_ACK  0x50  // Data transmitted and ACK received
 #define I2C_MASTER_RX_DATA_NACK 0x58  // Data transmitted and NACK received
-
-#define I2C_NO_STATE  0xF8 
-#define I2C_BUS_ERROR 0x00 
+#define I2C_NO_STATE			0xF8 
+#define I2C_BUS_ERROR			0x00 
 
 /* I2C Protocol Macros */
-#define I2C_TWCR_INIT()     (TWCR = (1 << TWEN)|(0 << TWIE)|(0 << TWINT)|(0 << TWEA)|(0 << TWSTA)|(0 << TWSTO)|(0 << TWWC))
+#define I2C_TWCR_INIT()     (0 << TWINT)|(0 << TWEA)|(0 << TWSTA)|(0 << TWSTO)|(0 << TWWC)|(1 << TWEN)|(0 << TWIE)
 #define I2C_SEND_START()    (TWCR = (1 << TWINT)|(1 << TWSTA)|(0 << TWSTO)|(1 << TWEN)|(1 << TWIE))
 #define I2C_SEND_STOP()     (TWCR = (1 << TWINT)|(0 << TWSTA)|(1 << TWSTO)|(1 << TWEN)|(0 << TWIE))
 #define I2C_SEND_TRANSMIT() (TWCR = (1 << TWINT)|(0 << TWSTA)|(0 << TWSTO)|(1 << TWEN)|(1 << TWIE))
@@ -67,29 +63,38 @@
 typedef enum {
     I2C_ACTIVE,
     I2C_INACTIVE
-} I2C_STATE_T;
-
-static I2C_STATE_T I2C_STATE;
+} i2c_state_t;
 
 static queue_t q;
-
 static queue_t* queue = NULL;
-
 static payload_t* payload = NULL;
-
 static device_t* device = NULL;
+static i2c_state_t I2C_STATE;
+
+/* Define CPU frequency in Hz here if not defined in Makefile */
+#ifndef F_CPU
+#define F_CPU 10000000UL
+#endif
 
 i2c_error_t i2c_init(i2c_config_t* config){
     
+	uint32_t prescaler;
+	volatile uint32_t scl_target_frequency;
+	volatile uint32_t scl_frequency;
+	
     /* Activate Internal Pullups */
     SET_PIN_OUTPUT(PORTD, SDA);
     SET_PIN_OUTPUT(PORTD, SCL);
     
-    /* Define Bit Genereator Unit */
-    uint16_t scl_frequency = F_CPU / ( 16 + (2 * TWBR) + 4^(TWPS0) ); //TWPS := Prescaler
-       
-    TWBR = 0x5C; // Target Frequency := 50kHz -> TWBR = 92 = 0x5C, with F_CPU=10MHz
-    TWSR |= (0 << TWPS1) | (0 << TWPS0); // Set Prescaler To 1 
+	TWSR |= (0 << TWPS1) | (0 << TWPS0); // Set prescaler value to 1  
+	
+	/* Define Bit Generator Unit */
+	prescaler = TWSR & 0x03;
+	scl_target_frequency = 50000; // [Hz]
+	TWBR = (F_CPU - (16 * scl_target_frequency)) / (2 * (1 << prescaler) * (1 << prescaler) * scl_target_frequency); // 4^n = 2^n * 2^n = (1 << n) * (1 << n)
+	scl_frequency = F_CPU / (16 + (2 * TWBR) + (1 << prescaler) * (1 << prescaler));
+	
+	// TODO: create warning output if scl_frequency is too high compared to F_CPU (Faktor F_CPU / 10) ??
     
     TWCR = (0 << TWINT) | (0 << TWEA) | (0 << TWSTA) | (0 << TWSTO) | (0 << TWWC) | (1 << TWEN) | (0 << TWIE);
     
@@ -108,7 +113,7 @@ i2c_error_t _i2c(){
         
         I2C_STATE = I2C_ACTIVE;
         
-        uart_put("START");
+        // uart_put("START");
         
         I2C_SEND_START();      
     }
@@ -161,10 +166,10 @@ i2c_error_t i2c_free_device(device_t* device){
 ISR(TWI_vect){
     
     /* Mask the prescaler bits to zero */
-    switch(TWSR & I2C_NO_STATE) {
+    switch(TWSR & 0xF8) {
         case I2C_START:
         case I2C_REP_START: {
-            uart_put("ADDR: %i", payload->protocol.i2c.device->address);
+            // uart_put("ADDR: %i", payload->protocol.i2c.device->address);
             TWDR = ((payload->protocol.i2c.device->address << 1) | 0x00);
             I2C_SEND_TRANSMIT();
             break;
@@ -172,7 +177,7 @@ ISR(TWI_vect){
           
         /* Address received by device -> ACK -> OK */ 
         case I2C_MASTER_TX_ADDR_ACK: { 
-            uart_put("DATA");       
+            // uart_put("DATA");       
             TWDR = *(payload->protocol.i2c.data); // Load Data
             I2C_SEND_TRANSMIT();
             break;
@@ -181,7 +186,7 @@ ISR(TWI_vect){
         /* Address NOT received by device -> NACK -> NOT OK -> Cleanup + STOP (?)
            -> Start error routine and/or load next job from buffer and skip this job */
         case I2C_MASTER_TX_ADDR_NACK: {   
-            uart_put("NACK");      
+            // uart_put("NACK");      
             I2C_STATE = I2C_INACTIVE;
             I2C_SEND_STOP();
             payload_free_i2c(payload);
@@ -190,7 +195,7 @@ ISR(TWI_vect){
             
         /* Data received by device -> ACK -> OK -> STOP transmission */
         case I2C_MASTER_TX_DATA_ACK: {
-            uart_put("DATA");    
+            // uart_put("DATA");    
             payload->protocol.i2c.number_of_bytes--;
             
             (payload->protocol.i2c.data)++;
@@ -199,7 +204,7 @@ ISR(TWI_vect){
                 TWDR = *(payload->protocol.i2c.data);
                 I2C_SEND_TRANSMIT();          
             } else {
-                uart_put("DONE");
+                // uart_put("DONE");
                 I2C_STATE = I2C_INACTIVE;
                 I2C_SEND_STOP();
             }
@@ -210,7 +215,7 @@ ISR(TWI_vect){
             -> STOP transmission OR REPEAT START and try to send data again (?)
             -> Start error routine */
         case I2C_MASTER_TX_DATA_NACK: { 
-            uart_put("NACK");  
+            // uart_put("NACK");  
             I2C_STATE = I2C_INACTIVE;
             I2C_SEND_STOP();
             payload_free_i2c(payload);
@@ -218,7 +223,7 @@ ISR(TWI_vect){
         }
               
         case I2C_BUS_ERROR: {
-           uart_put("ERROR");
+           // uart_put("ERROR");
            I2C_STATE = I2C_INACTIVE;
            I2C_SEND_STOP();
            payload_free_i2c(payload);
@@ -226,12 +231,12 @@ ISR(TWI_vect){
         }
         
         case I2C_NO_STATE: {
-            uart_put("NO STATE");
+            // uart_put("NO STATE");
             break;
         }
         
         default: {
-            uart_put("DEFAULT");
+            // uart_put("DEFAULT");
             I2C_STATE = I2C_INACTIVE;
             I2C_SEND_STOP();
             break;
