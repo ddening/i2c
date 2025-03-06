@@ -1,9 +1,9 @@
 /*************************************************************************
-* Title		: SPI Unit Test
+* Title		: I2C Unit Test
 * Author	: Dimitri Dening
 * Created	: 13.02.2022 19:30:22
 * Software	: Microchip Studio V7
-* Hardware	: Atmega1284P
+* Hardware	: Atmega2560
 * Usage		: see Doxygen manual
 *
 * This is a modified version of Microchip Studios' SPI Unit Test.
@@ -164,7 +164,7 @@ static int run_i2c_memory_leak_test(const struct test_case* test) {
     return TEST_PASS;
 }
     
-int main(void) {
+int test_i2c(void) {
     
 	cli();		
 	
