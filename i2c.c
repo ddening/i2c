@@ -188,7 +188,6 @@ ISR(TWI_vect){
             break;
         }
           
-        // Address received by device -> ACK -> OK
         case I2C_STATUS_TX_ADDR_ACK: { 
             // uart_put("DATA");       
             TWDR = *(payload->protocol.i2c.data); // Load Data
@@ -196,17 +195,19 @@ ISR(TWI_vect){
             break;
         }
              
-        /* Address NOT received by device -> NACK -> NOT OK -> Cleanup + STOP (?)
-           -> Start error routine and/or load next job from buffer and skip this job */
         case I2C_STATUS_TX_ADDR_NACK: {   
             // uart_put("NACK");      
-            I2C_STATE = I2C_INACTIVE;
-            I2C_TX_STOP();
-            payload_free_i2c(payload);
+				
+			if (payload != NULL) {
+				payload_free_i2c(payload);
+				payload = NULL;
+			}
+			
+			I2C_TX_STOP();
+			I2C_STATE = I2C_INACTIVE;	
             break;
         }
             
-        // Data received by device -> ACK -> OK -> STOP transmission
         case I2C_STATUS_TX_DATA_ACK: {
             // uart_put("DATA");    
             payload->protocol.i2c.number_of_bytes--;
@@ -216,34 +217,44 @@ ISR(TWI_vect){
             if (payload->protocol.i2c.number_of_bytes != 0) {
                 TWDR = *(payload->protocol.i2c.data);
                 I2C_TX_TRANSMIT();          
+            } else if (!queue_empty(queue)) {
+				// TODO: load next task from queue and continue
+				// if queue_empty = false => load next job and send new start command with address first TWDR = address
+				// STOP condition followed by a START condition will be transmitted and TWSTO Flag will be reset
+				I2C_TX_STOP();
+				I2C_STATE = I2C_INACTIVE;
             } else {
-                // uart_put("DONE");
-                I2C_STATE = I2C_INACTIVE;
-                I2C_TX_STOP();
-            }
-			
-			// TODO: ISR_ROUTINE queue_empty
-			// if queue_empty = true => load next job and send new start command with address first TWDR = address
-			// STOP condition followed by a START condition will be transmitted and TWSTO Flag will be reset
-			
+				// uart_put("DONE");
+				I2C_TX_STOP();
+				I2C_STATE = I2C_INACTIVE;
+			}
+					
             break;
         }
-           
-        /*  Data NOT received by device -> NACK -> NOT OK
-            -> STOP transmission OR REPEAT START and try to send data again (?)
-            -> Start error routine */
+
         case I2C_STATUS_TX_DATA_NACK: { 
             // uart_put("NACK");  
-            I2C_STATE = I2C_INACTIVE;
-            I2C_TX_STOP();
-            payload_free_i2c(payload);
+            		
+            if (payload != NULL) {
+	            payload_free_i2c(payload);
+	            payload = NULL;
+            }
+			
+			I2C_TX_STOP();
+			I2C_STATE = I2C_INACTIVE;
             break;
         }
                      
         default: {
             // uart_put("DEFAULT");
-            I2C_STATE = I2C_INACTIVE;
+			
+			if (payload != NULL) {
+				payload_free_i2c(payload);
+				payload = NULL;
+			}
+			
             I2C_TX_STOP();
+			I2C_STATE = I2C_INACTIVE;
             break;
         }            
     }
