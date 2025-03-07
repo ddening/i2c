@@ -36,6 +36,7 @@
 #include "i2c.h"
 #include "utils.h"
 #include "uart.h"
+#include "led_lib.h"
 
 // I2C Status Codes Master TX/RX Mode
 #define I2C_STATUS_START		0x08
@@ -56,21 +57,21 @@
 
 // I2C Protocol Macros
 #define I2C_TWCR_INIT()			TWCR = (0 << TWINT) | (0 << TWEA) | (0 << TWSTA) | (0 << TWSTO) | (0 << TWWC) | (1 << TWEN) | (1 << TWIE)
-
+// TODO: So sortieren, dass es wie im Datenblatt aussieht, TWINT nach hinten sortieren
 // Master Transmitter Mode
-#define I2C_TX_START()			TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO)
-#define I2C_TX_REPEAT_START()	TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO)
-#define I2C_TX_TRANSMIT()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO)
-#define I2C_TX_STOP()			TWCR = (1 << TWINT) | (0 << TWSTA) | (1 << TWSTO)
-#define I2C_TX_STOP_START()		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWSTO)
+#define I2C_TX_START()			TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN) | (1 << TWIE)
+#define I2C_TX_REPEAT_START()	TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN)| (1 << TWIE)
+#define I2C_TX_TRANSMIT()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (1 << TWEN)| (1 << TWIE)
+#define I2C_TX_STOP()			TWCR = (1 << TWINT) | (0 << TWSTA) | (1 << TWSTO) | (1 << TWEN)| (0 << TWIE)
+#define I2C_TX_STOP_START()		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWSTO) | (1 << TWEN)| (1 << TWIE)
 
 // Master Receiver Mode
-#define I2C_RX_START()			TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO)
-#define I2C_RX_TRANSMIT()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO)
-#define I2C_RX_STOP()			TWCR = (1 << TWINT) | (0 << TWSTA) | (1 << TWSTO)
-#define I2C_RX_STOP_START()		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWSTO)
-#define I2C_RX_SEND_NACK()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (0 << TWEA)
-#define I2C_RX_SEND_ACK()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (1 << TWEA)
+#define I2C_RX_START()			TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN)| (1 << TWIE)
+#define I2C_RX_TRANSMIT()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (1 << TWEN)| (1 << TWIE)
+#define I2C_RX_STOP()			TWCR = (1 << TWINT) | (0 << TWSTA) | (1 << TWSTO) | (1 << TWEN)| (0 << TWIE)
+#define I2C_RX_STOP_START()		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWSTO) | (1 << TWEN)| (1 << TWIE)
+#define I2C_RX_SEND_NACK()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (0 << TWEA) | (1 << TWEN) | (1 << TWIE)
+#define I2C_RX_SEND_ACK()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (1 << TWEA) | (1 << TWEN) | (1 << TWIE)
 
 typedef enum {
     I2C_ACTIVE,
@@ -108,9 +109,8 @@ i2c_error_t i2c_init(i2c_config_t* config){
 	
 	// TODO: create warning output if scl_frequency is too high compared to F_CPU (Faktor F_CPU / 10) ??
     
-	// TODO: use macro instead
-    TWCR = (0 << TWINT) | (0 << TWEA) | (0 << TWSTA) | (0 << TWSTO) | (0 << TWWC) | (1 << TWEN) | (1 << TWIE);
-    
+	I2C_TWCR_INIT();
+	
     I2C_STATE = I2C_INACTIVE;
     
     queue = queue_init(&q);
@@ -127,7 +127,6 @@ i2c_error_t _i2c(){
         I2C_STATE = I2C_ACTIVE;
         
         // uart_put("START");
-        
         I2C_TX_START();      
     }
     
@@ -177,12 +176,14 @@ i2c_error_t i2c_free_device(device_t* device){
 }
 
 ISR(TWI_vect){
-    
+
     // Mask the prescaler bits to zero
     switch(TWSR & 0xF8) {
         case I2C_STATUS_START:
         case I2C_STATUS_REPEAT_START: {
             // uart_put("ADDR: %i", payload->protocol.i2c.device->address);
+			led_toggle(LED0);
+			
             TWDR = ((payload->protocol.i2c.device->address << 1) | 0x00);
             I2C_TX_TRANSMIT();
             break;
@@ -190,13 +191,16 @@ ISR(TWI_vect){
           
         case I2C_STATUS_TX_ADDR_ACK: { 
             // uart_put("DATA");       
+			led_toggle(LED1);
+			
             TWDR = *(payload->protocol.i2c.data); // Load Data
             I2C_TX_TRANSMIT();
             break;
         }
              
         case I2C_STATUS_TX_ADDR_NACK: {   
-            // uart_put("NACK");      
+            // uart_put("NACK");   
+			led_toggle(LED2);   
 				
 			if (payload != NULL) {
 				payload_free_i2c(payload);
@@ -209,7 +213,9 @@ ISR(TWI_vect){
         }
             
         case I2C_STATUS_TX_DATA_ACK: {
-            // uart_put("DATA");    
+            // uart_put("DATA"); 
+			led_toggle(LED3);
+			   
             payload->protocol.i2c.number_of_bytes--;
             
             (payload->protocol.i2c.data)++;
@@ -233,7 +239,8 @@ ISR(TWI_vect){
         }
 
         case I2C_STATUS_TX_DATA_NACK: { 
-            // uart_put("NACK");  
+            // uart_put("NACK"); 
+			led_toggle(LED4); 
             		
             if (payload != NULL) {
 	            payload_free_i2c(payload);
@@ -247,6 +254,7 @@ ISR(TWI_vect){
                      
         default: {
             // uart_put("DEFAULT");
+			led_toggle(LED7);
 			
 			if (payload != NULL) {
 				payload_free_i2c(payload);
