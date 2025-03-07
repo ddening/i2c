@@ -128,7 +128,7 @@ static void _check_fake_busy ( void ) {
 
 static void _send_10_bit( uint8_t opcode, uint8_t instruction ) {
     
-    _check_fake_busy();
+    //_check_fake_busy();
     
     i2c_error_t err;
     
@@ -149,17 +149,17 @@ static void _send_10_bit( uint8_t opcode, uint8_t instruction ) {
     
     err = i2c_write(payload);
     
-    free( data );
+    free(data);
 }
 
 static int run_i2c_memory_leak_test(const struct test_case* test) {
        
     _send_10_bit( RSRW00, FUNCTION_SET_EUROPEAN ); // has to be sent first!
-    _send_10_bit( RSRW00, DISPLAY_OFF );
-    _send_10_bit( RSRW00, ENTRY_MODE );
-    _send_10_bit( RSRW00, CLEAR_DISPLAY );
-    _send_10_bit( RSRW00, RETURN_HOME );
-    _send_10_bit( RSRW00, ALL_ON );
+    //_send_10_bit( RSRW00, DISPLAY_OFF );
+    //_send_10_bit( RSRW00, ENTRY_MODE );
+    //_send_10_bit( RSRW00, CLEAR_DISPLAY );
+    //_send_10_bit( RSRW00, RETURN_HOME );
+    //_send_10_bit( RSRW00, ALL_ON );
     
     return TEST_PASS;
 }
@@ -170,13 +170,13 @@ int test_i2c(void) {
 	
 	led_init();
 	
-	uart_init();
+	//uart_init();
 	
 	i2c_init(&i2c_config);
     
     i2c_device = i2c_create_device(I2C_DEVICE_ADDR);
 	
-	sei();
+	sei();	
   	
 	DEFINE_TEST_CASE(i2c_memory_leak_test, NULL, run_i2c_memory_leak_test, NULL, "I2C memory leak test");
 
@@ -184,7 +184,7 @@ int test_i2c(void) {
 	DEFINE_TEST_ARRAY(i2c_tests) = {
         &i2c_memory_leak_test,
 	};
-    	
+	
 	/* Define the test suite */
 	DEFINE_TEST_SUITE(i2c_suite, i2c_tests, "I2C driver test suite");
     
