@@ -202,6 +202,25 @@ static void _isr_i2c_no_ack_response(void) {
 	}
 }
 
+static void _isr_i2c_handle_tx_complete(void) {
+	
+	
+	if (payload->protocol.i2c.callback != NULL) {
+		payload->protocol.i2c.callback();
+		payload->protocol.i2c.callback = NULL;
+	}
+	
+	_isr_i2c_free_payload();
+	
+	if (!queue_empty(queue)) {
+		payload = queue_dequeue(queue);
+		I2C_TX_STOP_START();
+	} else {
+		I2C_TX_STOP();
+		I2C_STATE = I2C_INACTIVE;
+	}
+}
+
 ISR(TWI_vect){
 
     // Mask the prescaler bits to zero
@@ -239,7 +258,7 @@ ISR(TWI_vect){
                 TWDR = *(payload->protocol.i2c.data);
                 I2C_TX_TRANSMIT();      	    
             } else {			
-				_isr_i2c_no_ack_response(); // TODO: rename, behaviour of no_nack response is correct, but may cause confusion in this context
+				_isr_i2c_handle_tx_complete();
 			}
 					
             break;
