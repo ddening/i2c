@@ -108,8 +108,7 @@ i2c_error_t i2c_init(i2c_config_t* config){
 	scl_frequency = F_CPU / (16 + (2 * TWBR) + (1 << prescaler) * (1 << prescaler));
 	
 	// TODO: create warning output if scl_frequency is too high compared to F_CPU (Faktor F_CPU / 10) ??
-	// TODO: Set slave_address for master receiver transmission mode
-    
+  
 	I2C_TWCR_INIT();
 	
     I2C_STATE = I2C_INACTIVE;
@@ -120,7 +119,7 @@ i2c_error_t i2c_init(i2c_config_t* config){
 }
 
 i2c_error_t _i2c(){
-    
+
     if (I2C_STATE == I2C_INACTIVE) {
         
         payload = queue_dequeue(queue);
@@ -136,7 +135,13 @@ i2c_error_t _i2c(){
 
 i2c_error_t i2c_read(payload_t* _payload){   
     
-    // _payload->protocol.i2c.device->address = (_payload->protocol.i2c.device->address << 1) | 0x01; 
+    i2c_error_t err;
+    
+    _payload->protocol.i2c.mode = READ;
+    
+    err = queue_enqueue(queue, _payload);
+    
+    err = _i2c();
     
     return I2C_NO_ERROR;
 }
@@ -144,12 +149,11 @@ i2c_error_t i2c_read(payload_t* _payload){
 i2c_error_t i2c_write(payload_t* _payload){   
     
     i2c_error_t err;
-    
-    //_payload->protocol.i2c.device->address = (_payload->protocol.i2c.device->address << 1) | 0x00; 
+	 
+	_payload->protocol.i2c.mode = WRITE; 
     
     err = queue_enqueue(queue, _payload);
-	// err = queue_enqueue(queue, _payload); // TODO: Zwei Pakete einreihen und ISR Routine auf Funktion prüfen
-    
+	
     err = _i2c();
     
     return I2C_NO_ERROR;
@@ -203,9 +207,14 @@ ISR(TWI_vect){
     // Mask the prescaler bits to zero
     switch(TWSR & 0xF8) {
         case I2C_STATUS_START:
-        case I2C_STATUS_REPEAT_START: {			
-            TWDR = ((payload->protocol.i2c.device->address << 1) | 0x00);	
-            I2C_TX_TRANSMIT();		
+        case I2C_STATUS_REPEAT_START: {		
+			if (payload->protocol.i2c.mode == WRITE) {
+				TWDR = ((payload->protocol.i2c.device->address << 1) | 0x00);
+			} else {
+				TWDR = ((payload->protocol.i2c.device->address << 1) | 0x01);
+			}
+            	
+            I2C_TX_TRANSMIT();
             break;
         }
           
@@ -229,7 +238,7 @@ ISR(TWI_vect){
             if (payload->protocol.i2c.number_of_bytes != 0) {			
                 TWDR = *(payload->protocol.i2c.data);
                 I2C_TX_TRANSMIT();      	    
-            } else {				
+            } else {			
 				_isr_i2c_no_ack_response(); // TODO: rename, behaviour of no_nack response is correct, but may cause confusion in this context
 			}
 					
@@ -248,6 +257,6 @@ ISR(TWI_vect){
             break;
         }  
 		
-		// TODO: Master Receiver Mode          
+		// TODO: Master Receiver Mode   
     }
 }
