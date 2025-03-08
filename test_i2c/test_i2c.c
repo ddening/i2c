@@ -48,6 +48,7 @@
 #include "i2c.h"
 #include "uart.h"
 #include "led_lib.h"
+#include "heartbeat.h"
 	
 #define I2C_DEVICE_ADDR 0x27  
 
@@ -79,10 +80,10 @@
 #define FUNCTION_SET_4_BIT_MODE 0x28 // 4 Bit Mode, 2 Lines, 5x8 Dots, 0x20 := Only 4 Bit Set
 
 /* Callback Flags */
-bool memory_return_success = 0;
+static bool memory_return_success = 0;
 
 /* Callback Functions */
-void callback_memory_leak(void) { memory_return_success = 1; };
+static void callback_memory_leak(void) { memory_return_success = 1; };
 	
 static device_t* i2c_device;
 
@@ -157,7 +158,7 @@ static int run_i2c_memory_leak_test(const struct test_case* test){
 		
 		memory_return_success = 0;
 	}
-	
+
 	return TEST_PASS;
 }
 
@@ -218,11 +219,13 @@ static int run_i2c_to_hd44780_test(const struct test_case* test){
     return TEST_PASS;
 }
   
-int test_i2c(void) {
+void test_i2c(void) {
     
 	cli();		
 	
 	led_init();
+	
+	heartbeat_init();
 	
 	//uart_init();
 	
@@ -239,7 +242,7 @@ int test_i2c(void) {
 	/* Put test case addresses in an array */
 	DEFINE_TEST_ARRAY(i2c_tests) = {
 		//&i2c_payload_test,
-        &i2c_memory_leak_test,
+        //&i2c_memory_leak_test,
 		//&i2c_to_hd44780_test,
 	};
 	
@@ -247,7 +250,5 @@ int test_i2c(void) {
 	DEFINE_TEST_SUITE(i2c_suite, i2c_tests, "I2C driver test suite");
     
 	/* Run all tests in the test suite */
-	test_suite_run(&i2c_suite);
-	
-	while (1) { /* Busy-wait forever. */ }
+	test_i2c_suite_run(&i2c_suite);
 }

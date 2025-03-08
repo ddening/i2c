@@ -32,6 +32,6 @@
 #ifndef TEST_I2C_H_
 #define TEST_I2C_H_
 
-int test_i2c(void);
+void test_i2c(void);
 
 #endif /* TEST_I2C_H_ */
