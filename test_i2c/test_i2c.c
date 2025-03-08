@@ -77,14 +77,20 @@
 #define ENTRY_MODE      0x07
 #define FUNCTION_SET_EUROPEAN 0x3C
 #define FUNCTION_SET_4_BIT_MODE 0x28 // 4 Bit Mode, 2 Lines, 5x8 Dots, 0x20 := Only 4 Bit Set
-    
+
+/* Callback Flags */
+bool memory_return_success = 0;
+
+/* Callback Functions */
+void callback_memory_leak(void) { memory_return_success = 1; };
+	
 static device_t* i2c_device;
 
 static uint8_t dummy_payload[] = { 1, 2, 3, 4, 5 };
 
 static int run_i2c_payload_test(const struct test_case* test){
     
-    i2c_device = i2c_create_device(I2C_DEVICE_ADDR);
+    // i2c_device = i2c_create_device(I2C_DEVICE_ADDR);
     
     if (i2c_device == NULL) {
         return TEST_ERROR;
@@ -133,6 +139,26 @@ static int run_i2c_payload_test(const struct test_case* test){
 
 static int run_i2c_memory_leak_test(const struct test_case* test){
     
+	uint32_t number_of_tasks;
+	payload_t* payload;
+	
+	number_of_tasks = 30000;
+	for (int i = 0; i < number_of_tasks; i++) {
+		
+		payload = payload_create_i2c(PRIORITY_NORMAL, i2c_device, dummy_payload, ARRAY_LEN(dummy_payload), &callback_memory_leak);
+		
+		if (payload == NULL) {
+			return TEST_ERROR;
+		}
+		
+		i2c_write(payload);
+		
+		while(memory_return_success != 1);
+		
+		memory_return_success = 0;
+	}
+	
+	return TEST_PASS;
 }
 
 static void _check_fake_busy (void) {
@@ -212,8 +238,8 @@ int test_i2c(void) {
 
 	/* Put test case addresses in an array */
 	DEFINE_TEST_ARRAY(i2c_tests) = {
-		&i2c_payload_test,
-        //&i2c_memory_leak_test,
+		//&i2c_payload_test,
+        &i2c_memory_leak_test,
 		//&i2c_to_hd44780_test,
 	};
 	
