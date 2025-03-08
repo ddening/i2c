@@ -126,7 +126,6 @@ i2c_error_t _i2c(){
         
         I2C_STATE = I2C_ACTIVE;
         
-        // uart_put("START");
         I2C_TX_START();      
     }
     
