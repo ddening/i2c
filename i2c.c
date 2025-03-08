@@ -108,6 +108,7 @@ i2c_error_t i2c_init(i2c_config_t* config){
 	scl_frequency = F_CPU / (16 + (2 * TWBR) + (1 << prescaler) * (1 << prescaler));
 	
 	// TODO: create warning output if scl_frequency is too high compared to F_CPU (Faktor F_CPU / 10) ??
+	// TODO: Set slave_address for master receiver transmission mode
     
 	I2C_TWCR_INIT();
 	
@@ -147,6 +148,7 @@ i2c_error_t i2c_write(payload_t* _payload){
     //_payload->protocol.i2c.device->address = (_payload->protocol.i2c.device->address << 1) | 0x00; 
     
     err = queue_enqueue(queue, _payload);
+	// err = queue_enqueue(queue, _payload); // TODO: Zwei Pakete einreihen und ISR Routine auf Funktion prüfen
     
     err = _i2c();
     
@@ -175,95 +177,77 @@ i2c_error_t i2c_free_device(device_t* device){
     return I2C_NO_ERROR;
 }
 
+static void _isr_i2c_free_payload(void) {
+	
+	if (payload != NULL) {
+		payload_free_i2c(payload);
+		payload = NULL;
+	}
+}
+
+static void _isr_i2c_no_ack_response(void) {
+	
+	_isr_i2c_free_payload();
+	
+	if (!queue_empty(queue)) {
+		payload = queue_dequeue(queue);
+		I2C_TX_STOP_START();
+	} else {
+		I2C_TX_STOP();
+		I2C_STATE = I2C_INACTIVE;
+	}
+}
+
 ISR(TWI_vect){
 
     // Mask the prescaler bits to zero
     switch(TWSR & 0xF8) {
         case I2C_STATUS_START:
-        case I2C_STATUS_REPEAT_START: {
-            // uart_put("ADDR: %i", payload->protocol.i2c.device->address);
-			led_toggle(LED0);
-			
-            TWDR = ((payload->protocol.i2c.device->address << 1) | 0x00);
-            I2C_TX_TRANSMIT();
+        case I2C_STATUS_REPEAT_START: {			
+            TWDR = ((payload->protocol.i2c.device->address << 1) | 0x00);	
+            I2C_TX_TRANSMIT();		
             break;
         }
           
-        case I2C_STATUS_TX_ADDR_ACK: { 
-            // uart_put("DATA");       
-			led_toggle(LED1);
-			
-            TWDR = *(payload->protocol.i2c.data); // Load Data
+        case I2C_STATUS_TX_ADDR_ACK: {  	
+            TWDR = *(payload->protocol.i2c.data);
             I2C_TX_TRANSMIT();
             break;
         }
              
-        case I2C_STATUS_TX_ADDR_NACK: {   
-            // uart_put("NACK");   
-			led_toggle(LED2);   
-				
-			if (payload != NULL) {
-				payload_free_i2c(payload);
-				payload = NULL;
-			}
-			
-			I2C_TX_STOP();
-			I2C_STATE = I2C_INACTIVE;	
+        case I2C_STATUS_TX_ADDR_NACK: {       		
+			_isr_i2c_no_ack_response();	
             break;
         }
             
         case I2C_STATUS_TX_DATA_ACK: {
-            // uart_put("DATA"); 
-			led_toggle(LED3);
 			   
             payload->protocol.i2c.number_of_bytes--;
             
             (payload->protocol.i2c.data)++;
             
-            if (payload->protocol.i2c.number_of_bytes != 0) {
+            if (payload->protocol.i2c.number_of_bytes != 0) {			
                 TWDR = *(payload->protocol.i2c.data);
-                I2C_TX_TRANSMIT();          
-            } else if (!queue_empty(queue)) {
-				// TODO: load next task from queue and continue
-				// if queue_empty = false => load next job and send new start command with address first TWDR = address
-				// STOP condition followed by a START condition will be transmitted and TWSTO Flag will be reset
-				I2C_TX_STOP();
-				I2C_STATE = I2C_INACTIVE;
-            } else {
-				// uart_put("DONE");
-				I2C_TX_STOP();
-				I2C_STATE = I2C_INACTIVE;
+                I2C_TX_TRANSMIT();      	    
+            } else {				
+				_isr_i2c_no_ack_response(); // TODO: rename, behaviour of no_nack response is correct, but may cause confusion in this context
 			}
 					
             break;
         }
 
-        case I2C_STATUS_TX_DATA_NACK: { 
-            // uart_put("NACK"); 
-			led_toggle(LED4); 
-            		
-            if (payload != NULL) {
-	            payload_free_i2c(payload);
-	            payload = NULL;
-            }
-			
-			I2C_TX_STOP();
-			I2C_STATE = I2C_INACTIVE;
+        case I2C_STATUS_TX_DATA_NACK: { 	   		
+			_isr_i2c_no_ack_response();
             break;
         }
                      
-        default: {
-            // uart_put("DEFAULT");
-			led_toggle(LED7);
-			
-			if (payload != NULL) {
-				payload_free_i2c(payload);
-				payload = NULL;
-			}
-			
+        default: {			
+			_isr_i2c_free_payload();
             I2C_TX_STOP();
 			I2C_STATE = I2C_INACTIVE;
             break;
-        }            
+        }  
+		
+		// TODO: Master Receiver Mode          
     }
 }
