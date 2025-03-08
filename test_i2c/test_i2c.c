@@ -66,15 +66,17 @@
 #define RSRW10 0x02
 #define RSRW11 0x03
 
+#define WRITE_TEST_CHAR 0x48
 #define ALL_ON          0x0F
 #define DISPLAY_OFF     0x08
 #define DISPLAY_ON      0x0C
-#define CURSOR_ON       0x0A    // 0b00001010 -> sets display off
-#define BLINK_ON        0x09    // 0b00001001 -> sets display off
+#define CURSOR_ON       0x0A 
+#define BLINK_ON        0x09   
 #define CLEAR_DISPLAY   0x01
 #define RETURN_HOME     0x02
 #define ENTRY_MODE      0x07
 #define FUNCTION_SET_EUROPEAN 0x3C
+#define FUNCTION_SET_4_BIT_MODE 0x28 // 4 Bit Mode, 2 Lines, 5x8 Dots, 0x20 := Only 4 Bit Set
     
 static device_t* i2c_device;
 
@@ -93,6 +95,10 @@ static int run_i2c_payload_test(const struct test_case* test){
     if (data == NULL) {
         return TEST_ERROR;
     }
+	
+	for (uint8_t i = 0; i < ARRAY_LEN(dummy_payload); i++) {
+		data[i] = dummy_payload[i];
+	}
     
     payload_t* payload = payload_create_i2c(PRIORITY_NORMAL, i2c_device, data, ARRAY_LEN(dummy_payload), NULL);
     
@@ -115,55 +121,77 @@ static int run_i2c_payload_test(const struct test_case* test){
             return TEST_FAIL;
         }
     }
+
+	i2c_write(payload);
     
-    free(data);
-    free(payload);
-    free(i2c_device);  
+    //free(data);
+    //free(payload);
+    //free(i2c_device);  
+	
     return TEST_PASS;
 }
 
-static void _check_fake_busy ( void ) {
-    _delay_ms(20); // Fake Busy Response
+static int run_i2c_memory_leak_test(const struct test_case* test){
+    
 }
 
-static void _send_10_bit( uint8_t opcode, uint8_t instruction ) {
-    
-    //_check_fake_busy();
-    
-    i2c_error_t err;
-    
-    uint8_t* data = (uint8_t*) malloc( sizeof( uint8_t ) * 2 );
-    
-    if ( data == NULL ) {
-        return;
-    }
-         
-    data[0] = ( ( opcode << 6) | ( instruction >> 2 ) );
-    data[1] = ( instruction << 6 );
-    
-    payload_t* payload = payload_create_i2c(PRIORITY_NORMAL, i2c_device, data, 2, NULL);
-    
-    if ( payload == NULL ) {
-        return;
-    }
-    
-    err = i2c_write(payload);
-    
-    free(data);
+static void _check_fake_busy (void) {
+	_delay_ms(20); // Fake Busy Response
 }
 
-static int run_i2c_memory_leak_test(const struct test_case* test) {
-       
-    _send_10_bit( RSRW00, FUNCTION_SET_EUROPEAN ); // has to be sent first!
-    //_send_10_bit( RSRW00, DISPLAY_OFF );
-    //_send_10_bit( RSRW00, ENTRY_MODE );
-    //_send_10_bit( RSRW00, CLEAR_DISPLAY );
-    //_send_10_bit( RSRW00, RETURN_HOME );
-    //_send_10_bit( RSRW00, ALL_ON );
-    
+static void _send_10_bit(uint8_t opcode, uint8_t instruction){
+	
+	//_check_fake_busy();
+	
+	i2c_error_t err;
+	
+	uint8_t* data = (uint8_t*) malloc(sizeof(uint8_t) * 2);
+	
+	if (data == NULL) {
+		return;
+	}
+	
+	data[0] = ((opcode << 6) | (instruction >> 2));
+	data[1] = (instruction << 6);
+	
+	payload_t* payload = payload_create_i2c(PRIORITY_NORMAL, i2c_device, data, 2, NULL);
+	
+	if (payload == NULL) {
+		return;
+	}
+	
+	err = i2c_write(payload);
+	
+	free(data);
+}
+
+static int run_i2c_to_hd44780_test(const struct test_case* test){
+	
+	_delay_ms(200);
+	_send_10_bit( RSRW00, 0x30 );
+	_delay_ms(4.1);
+	_send_10_bit( RSRW00, 0x30 );
+	_delay_ms(0.1);
+	_send_10_bit( RSRW00, 0x30 );
+	_delay_ms(100);
+	
+	_send_10_bit( RSRW00, FUNCTION_SET_4_BIT_MODE ); // has to be sent first!
+	_delay_ms(100);
+	_send_10_bit( RSRW00, FUNCTION_SET_4_BIT_MODE ); // has to be sent first!
+	_delay_ms(100);
+	
+    _send_10_bit( RSRW00, DISPLAY_OFF );
+	_send_10_bit( RSRW00, CLEAR_DISPLAY );
+    _send_10_bit( RSRW00, ENTRY_MODE );
+    _send_10_bit( RSRW00, RETURN_HOME );
+    _send_10_bit( RSRW00, ALL_ON );
+	_send_10_bit( RSRW00, DISPLAY_ON | CURSOR_ON | BLINK_ON );
+	_send_10_bit( RSRW00, 0x07 ); // CURSOR_DIR_LEFT_NO_SHIFT
+	_send_10_bit( RSRW11, WRITE_TEST_CHAR );
+	
     return TEST_PASS;
 }
-    
+  
 int test_i2c(void) {
     
 	cli();		
@@ -178,11 +206,15 @@ int test_i2c(void) {
 	
 	sei();	
   	
+	DEFINE_TEST_CASE(i2c_payload_test, NULL, run_i2c_payload_test, NULL, "I2C payload test");
 	DEFINE_TEST_CASE(i2c_memory_leak_test, NULL, run_i2c_memory_leak_test, NULL, "I2C memory leak test");
+	DEFINE_TEST_CASE(i2c_to_hd44780_test, NULL, run_i2c_to_hd44780_test, NULL, "I2C to HD44780 test");
 
 	/* Put test case addresses in an array */
 	DEFINE_TEST_ARRAY(i2c_tests) = {
-        &i2c_memory_leak_test,
+		&i2c_payload_test,
+        //&i2c_memory_leak_test,
+		//&i2c_to_hd44780_test,
 	};
 	
 	/* Define the test suite */
