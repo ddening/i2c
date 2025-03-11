@@ -47,7 +47,7 @@ typedef struct device_t {
     uint8_t address;
 } device_t;
 
-i2c_error_t i2c_init(i2c_config_t*);
+i2c_error_t i2c_init(void);
 
 i2c_error_t i2c_read(payload_t*);
 

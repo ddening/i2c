@@ -60,16 +60,16 @@
 // TODO: So sortieren, dass es wie im Datenblatt aussieht, TWINT nach hinten sortieren
 // Master Transmitter Mode
 #define I2C_TX_START()			TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN) | (1 << TWIE)
-#define I2C_TX_REPEAT_START()	TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN)| (1 << TWIE)
-#define I2C_TX_TRANSMIT()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (1 << TWEN)| (1 << TWIE)
-#define I2C_TX_STOP()			TWCR = (1 << TWINT) | (0 << TWSTA) | (1 << TWSTO) | (1 << TWEN)| (0 << TWIE)
-#define I2C_TX_STOP_START()		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWSTO) | (1 << TWEN)| (1 << TWIE)
+#define I2C_TX_REPEAT_START()	TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN) | (1 << TWIE)
+#define I2C_TX_TRANSMIT()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (1 << TWEN) | (1 << TWIE)
+#define I2C_TX_STOP()			TWCR = (1 << TWINT) | (0 << TWSTA) | (1 << TWSTO) | (1 << TWEN) | (0 << TWIE)
+#define I2C_TX_STOP_START()		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWSTO) | (1 << TWEN) | (1 << TWIE)
 
 // Master Receiver Mode
-#define I2C_RX_START()			TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN)| (1 << TWIE)
-#define I2C_RX_TRANSMIT()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (1 << TWEN)| (1 << TWIE)
-#define I2C_RX_STOP()			TWCR = (1 << TWINT) | (0 << TWSTA) | (1 << TWSTO) | (1 << TWEN)| (0 << TWIE)
-#define I2C_RX_STOP_START()		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWSTO) | (1 << TWEN)| (1 << TWIE)
+#define I2C_RX_START()			TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN) | (1 << TWIE)
+#define I2C_RX_TRANSMIT()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (1 << TWEN) | (1 << TWIE)
+#define I2C_RX_STOP()			TWCR = (1 << TWINT) | (0 << TWSTA) | (1 << TWSTO) | (1 << TWEN) | (0 << TWIE)
+#define I2C_RX_STOP_START()		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWSTO) | (1 << TWEN) | (1 << TWIE)
 #define I2C_RX_SEND_NACK()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (0 << TWEA) | (1 << TWEN) | (1 << TWIE)
 #define I2C_RX_SEND_ACK()		TWCR = (1 << TWINT) | (0 << TWSTA) | (0 << TWSTO) | (1 << TWEA) | (1 << TWEN) | (1 << TWIE)
 
@@ -89,7 +89,7 @@ static i2c_state_t I2C_STATE;
 #define F_CPU 10000000UL // Hz
 #endif
 
-i2c_error_t i2c_init(i2c_config_t* config){
+i2c_error_t i2c_init(void){ // i2c_config_t* config
     
 	uint32_t prescaler;
 	uint32_t scl_target_frequency;
@@ -135,7 +135,7 @@ i2c_error_t _i2c(){
 i2c_error_t i2c_read(payload_t* _payload){   
     
     i2c_error_t err;
-    
+	
     _payload->protocol.i2c.mode = READ;
     
     err = queue_enqueue(queue, _payload);
@@ -196,16 +196,15 @@ static void _isr_i2c_no_ack_response(void) {
 		payload = queue_dequeue(queue);
 		I2C_TX_STOP_START();
 	} else {
-		I2C_TX_STOP();
 		I2C_STATE = I2C_INACTIVE;
+		I2C_TX_STOP();	
 	}
 }
 
 static void _isr_i2c_handle_tx_complete(void) {
 	
-	
 	if (payload->protocol.i2c.callback != NULL) {
-		payload->protocol.i2c.callback();
+		payload->protocol.i2c.callback(NULL);
 		payload->protocol.i2c.callback = NULL;
 	}
 	
@@ -215,15 +214,39 @@ static void _isr_i2c_handle_tx_complete(void) {
 		payload = queue_dequeue(queue);
 		I2C_TX_STOP_START();
 	} else {
-		I2C_TX_STOP();
 		I2C_STATE = I2C_INACTIVE;
+		I2C_TX_STOP();	
 	}
+}
+
+static void _isr_i2c_handle_rx_complete(void) {
+		
+	_isr_i2c_free_payload();
+	uint8_t dummy = TWDR;
+	if (!queue_empty(queue)) {
+		payload = queue_dequeue(queue);
+		I2C_RX_STOP_START();
+	} else {
+		I2C_STATE = I2C_INACTIVE;
+		I2C_RX_STOP();
+	}
+}
+
+static void _isr_i2c_callback(void) {
+	
+	if (payload->protocol.i2c.callback != NULL) {
+		payload->protocol.i2c.callback(NULL); // TWDR
+		payload->protocol.i2c.callback = NULL;
+	}
+	
+	uint8_t dummy = TWDR;
 }
 
 ISR(TWI_vect){
 
     // Mask the prescaler bits to zero
     switch(TWSR & 0xF8) {
+		// Master Transmitter Mode
         case I2C_STATUS_START:
         case I2C_STATUS_REPEAT_START: {		
 			if (payload->protocol.i2c.mode == WRITE) {
@@ -268,13 +291,45 @@ ISR(TWI_vect){
             break;
         }
                      
-        default: {			
-			_isr_i2c_free_payload();
-            I2C_TX_STOP();
-			I2C_STATE = I2C_INACTIVE;
-            break;
-        }  
+		// Master Receiver Mode   
+		case I2C_STATUS_RX_ADDR_ACK: {
+			I2C_RX_SEND_ACK();
+			break;
+		} 
 		
-		// TODO: Master Receiver Mode   
+		case I2C_STATUS_RX_ADDR_NACK: {
+			_isr_i2c_no_ack_response();
+			break;
+		}
+		
+		case I2C_STATUS_RX_DATA_ACK: {	
+			
+			payload->protocol.i2c.number_of_bytes--;
+			
+			(payload->protocol.i2c.data)++;
+			
+			_isr_i2c_callback();
+			
+			if (payload->protocol.i2c.number_of_bytes != 0) {
+				I2C_RX_SEND_ACK();
+			} else {
+				I2C_RX_SEND_NACK();
+			}
+			
+			break;
+		}
+		
+		case I2C_STATUS_RX_DATA_NACK: {
+			_isr_i2c_callback();
+			_isr_i2c_handle_rx_complete();
+			break;
+		}
+		
+		default: {
+			_isr_i2c_free_payload();
+			I2C_STATE = I2C_INACTIVE;
+			I2C_TX_STOP();
+			break;
+		}
     }
 }
