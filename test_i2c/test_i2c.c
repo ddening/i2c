@@ -166,55 +166,9 @@ static void _check_fake_busy (void) {
 	_delay_ms(20); // Fake Busy Response
 }
 
-static void _send_10_bit(uint8_t opcode, uint8_t instruction){
-	
-	//_check_fake_busy();
-	
-	i2c_error_t err;
-	
-	uint8_t* data = (uint8_t*) malloc(sizeof(uint8_t) * 2);
-	
-	if (data == NULL) {
-		return;
-	}
-	
-	data[0] = ((opcode << 6) | (instruction >> 2));
-	data[1] = (instruction << 6);
-	
-	payload_t* payload = payload_create_i2c(PRIORITY_NORMAL, i2c_device, data, 2, NULL);
-	
-	if (payload == NULL) {
-		return;
-	}
-	
-	err = i2c_write(payload);
-	
-	free(data);
-}
-
 static int run_i2c_to_hd44780_test(const struct test_case* test){
 	
-	_delay_ms(200);
-	_send_10_bit( RSRW00, 0x30 );
-	_delay_ms(4.1);
-	_send_10_bit( RSRW00, 0x30 );
-	_delay_ms(0.1);
-	_send_10_bit( RSRW00, 0x30 );
-	_delay_ms(100);
-	
-	_send_10_bit( RSRW00, FUNCTION_SET_4_BIT_MODE ); // has to be sent first!
-	_delay_ms(100);
-	_send_10_bit( RSRW00, FUNCTION_SET_4_BIT_MODE ); // has to be sent first!
-	_delay_ms(100);
-	
-    _send_10_bit( RSRW00, DISPLAY_OFF );
-	_send_10_bit( RSRW00, CLEAR_DISPLAY );
-    _send_10_bit( RSRW00, ENTRY_MODE );
-    _send_10_bit( RSRW00, RETURN_HOME );
-    _send_10_bit( RSRW00, ALL_ON );
-	_send_10_bit( RSRW00, DISPLAY_ON | CURSOR_ON | BLINK_ON );
-	_send_10_bit( RSRW00, 0x07 ); // CURSOR_DIR_LEFT_NO_SHIFT
-	_send_10_bit( RSRW11, WRITE_TEST_CHAR );
+	// TODO: use hd44780_i2c here
 	
     return TEST_PASS;
 }
@@ -229,7 +183,7 @@ void test_i2c(void) {
 	
 	//uart_init();
 	
-	i2c_init(&i2c_config);
+	i2c_init(); // &i2c_config
     
     i2c_device = i2c_create_device(I2C_DEVICE_ADDR);
 	
