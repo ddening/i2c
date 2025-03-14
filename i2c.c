@@ -35,8 +35,7 @@
 /* User defined libraries */
 #include "i2c.h"
 #include "utils.h"
-#include "uart.h"
-#include "led_lib.h"
+#include "memory.h"
 
 // I2C Status Codes Master TX/RX Mode
 #define I2C_STATUS_START		0x08
@@ -57,7 +56,7 @@
 
 // I2C Protocol Macros
 #define I2C_TWCR_INIT()			TWCR = (0 << TWINT) | (0 << TWEA) | (0 << TWSTA) | (0 << TWSTO) | (0 << TWWC) | (1 << TWEN) | (1 << TWIE)
-// TODO: So sortieren, dass es wie im Datenblatt aussieht, TWINT nach hinten sortieren
+
 // Master Transmitter Mode
 #define I2C_TX_START()			TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN) | (1 << TWIE)
 #define I2C_TX_REPEAT_START()	TWCR = (1 << TWINT) | (1 << TWSTA) | (0 << TWSTO) | (1 << TWEN) | (1 << TWIE)
@@ -81,7 +80,6 @@ typedef enum {
 static queue_t q;
 static queue_t* queue = NULL;
 static payload_t* payload = NULL;
-static device_t* device = NULL;
 static i2c_state_t I2C_STATE;
 
 // Define CPU frequency in Hz here if not defined in Makefile
@@ -89,7 +87,7 @@ static i2c_state_t I2C_STATE;
 #define F_CPU 10000000UL // Hz
 #endif
 
-i2c_error_t i2c_init(void){ // i2c_config_t* config
+i2c_error_t i2c_init(void) {
     
 	uint32_t prescaler;
 	uint32_t scl_target_frequency;
@@ -103,40 +101,43 @@ i2c_error_t i2c_init(void){ // i2c_config_t* config
 	
 	// Define Bit Generator Unit
 	prescaler = TWSR & 0x03;
-	scl_target_frequency = 50000; // Hz
+	scl_target_frequency = 50000;
 	TWBR = (F_CPU - (16 * scl_target_frequency)) / (2 * (1 << prescaler) * (1 << prescaler) * scl_target_frequency); // 4^n = 2^n * 2^n = (1 << n) * (1 << n)
-	scl_frequency = F_CPU / (16 + (2 * TWBR) + (1 << prescaler) * (1 << prescaler));
+	scl_frequency = F_CPU / (16 + (2 * TWBR) + (1 << prescaler) * (1 << prescaler)); // TODO: 
 	
-	// TODO: create warning output if scl_frequency is too high compared to F_CPU (Faktor F_CPU / 10) ??
-  
+	// TODO: Make sure scl_frequency holds correct value
+	if (scl_frequency > (F_CPU / 10)) {
+		
+	}
+	 
 	I2C_TWCR_INIT();
 	
     I2C_STATE = I2C_INACTIVE;
     
     queue = queue_init(&q);
-    
+	
     return I2C_NO_ERROR;
 }
 
-i2c_error_t _i2c(){
+i2c_error_t _i2c() {
 
     if (I2C_STATE == I2C_INACTIVE) {
         
         payload = queue_dequeue(queue);
         
         I2C_STATE = I2C_ACTIVE;
-        
+
         I2C_TX_START();      
     }
     
     return I2C_NO_ERROR;
 }
 
-i2c_error_t i2c_read(payload_t* _payload){   
+i2c_error_t i2c_read(payload_t* _payload) {   
     
     i2c_error_t err;
 	
-    _payload->protocol.i2c.mode = READ;
+    _payload->i2c.mode = READ;
     
     err = queue_enqueue(queue, _payload);
     
@@ -145,22 +146,22 @@ i2c_error_t i2c_read(payload_t* _payload){
     return I2C_NO_ERROR;
 }
 
-i2c_error_t i2c_write(payload_t* _payload){   
+i2c_error_t i2c_write(payload_t* _payload) {   
     
     i2c_error_t err;
-	 
-	_payload->protocol.i2c.mode = WRITE; 
-    
+
+	_payload->i2c.mode = WRITE; 
+
     err = queue_enqueue(queue, _payload);
-	
+
     err = _i2c();
     
     return I2C_NO_ERROR;
 }
 
-device_t* i2c_create_device(uint8_t address){
+device_t* i2c_create_device(uint8_t address) {
     
-    device_t* device = malloc(sizeof(device_t));
+    device_t* device = (device_t*)malloc(sizeof(device_t));
     
     if (device == NULL) {
         return NULL;
@@ -171,7 +172,7 @@ device_t* i2c_create_device(uint8_t address){
     return device;
 }
 
-i2c_error_t i2c_free_device(device_t* device){
+i2c_error_t i2c_free_device(device_t* device) {
     
     free(device);  
     
@@ -202,10 +203,10 @@ static void _isr_i2c_no_ack_response(void) {
 }
 
 static void _isr_i2c_handle_tx_complete(void) {
-	
-	if (payload->protocol.i2c.callback != NULL) {
-		payload->protocol.i2c.callback(NULL);
-		payload->protocol.i2c.callback = NULL;
+
+	if (payload->i2c.callback != NULL) {
+		payload->i2c.callback(NULL);
+		payload->i2c.callback = NULL;
 	}
 	
 	_isr_i2c_free_payload();
@@ -213,16 +214,16 @@ static void _isr_i2c_handle_tx_complete(void) {
 	if (!queue_empty(queue)) {
 		payload = queue_dequeue(queue);
 		I2C_TX_STOP_START();
-	} else {
+	} else {		
 		I2C_STATE = I2C_INACTIVE;
 		I2C_TX_STOP();	
 	}
 }
 
 static void _isr_i2c_handle_rx_complete(void) {
-		
+
 	_isr_i2c_free_payload();
-	uint8_t dummy = TWDR;
+	
 	if (!queue_empty(queue)) {
 		payload = queue_dequeue(queue);
 		I2C_RX_STOP_START();
@@ -234,50 +235,57 @@ static void _isr_i2c_handle_rx_complete(void) {
 
 static void _isr_i2c_callback(void) {
 	
-	if (payload->protocol.i2c.callback != NULL) {
-		payload->protocol.i2c.callback(NULL); // TWDR
-		payload->protocol.i2c.callback = NULL;
+	if (payload->i2c.callback != NULL) {
+		payload->i2c.callback(NULL);
+		payload->i2c.callback = NULL;
 	}
-	
-	uint8_t dummy = TWDR;
 }
 
-ISR(TWI_vect){
+ISR(TWI_vect) {
 
     // Mask the prescaler bits to zero
     switch(TWSR & 0xF8) {
 		// Master Transmitter Mode
         case I2C_STATUS_START:
-        case I2C_STATUS_REPEAT_START: {		
-			if (payload->protocol.i2c.mode == WRITE) {
-				TWDR = ((payload->protocol.i2c.device->address << 1) | 0x00);
-			} else {
-				TWDR = ((payload->protocol.i2c.device->address << 1) | 0x01);
+        case I2C_STATUS_REPEAT_START: {	
+			
+			if (payload->i2c.mode == WRITE) {
+				TWDR = ((payload->i2c.device->address << 1) | 0x00);			
+			} else {			
+				TWDR = ((payload->i2c.device->address << 1) | 0x01);
 			}
-            	
+            
             I2C_TX_TRANSMIT();
+			
             break;
         }
           
-        case I2C_STATUS_TX_ADDR_ACK: {  	
-            TWDR = *(payload->protocol.i2c.data);
+        case I2C_STATUS_TX_ADDR_ACK: {  
+				
+            TWDR = *(payload->i2c.data);	
+				
             I2C_TX_TRANSMIT();
+			
             break;
         }
              
-        case I2C_STATUS_TX_ADDR_NACK: {       		
+        case I2C_STATUS_TX_ADDR_NACK: {   
+			    		
 			_isr_i2c_no_ack_response();	
+			
             break;
         }
             
         case I2C_STATUS_TX_DATA_ACK: {
-			   
-            payload->protocol.i2c.number_of_bytes--;
+
+            payload->i2c.number_of_bytes--;
+			
+            (payload->i2c.data)++;
             
-            (payload->protocol.i2c.data)++;
-            
-            if (payload->protocol.i2c.number_of_bytes != 0) {			
-                TWDR = *(payload->protocol.i2c.data);
+            if (payload->i2c.number_of_bytes != 0) {	
+						
+                TWDR = *(payload->i2c.data);	
+							
                 I2C_TX_TRANSMIT();      	    
             } else {			
 				_isr_i2c_handle_tx_complete();
@@ -286,31 +294,37 @@ ISR(TWI_vect){
             break;
         }
 
-        case I2C_STATUS_TX_DATA_NACK: { 	   		
+        case I2C_STATUS_TX_DATA_NACK: { 
+				   		
 			_isr_i2c_no_ack_response();
+			
             break;
         }
                      
 		// Master Receiver Mode   
 		case I2C_STATUS_RX_ADDR_ACK: {
+			
 			I2C_RX_SEND_ACK();
+			
 			break;
 		} 
 		
 		case I2C_STATUS_RX_ADDR_NACK: {
+			
 			_isr_i2c_no_ack_response();
+			
 			break;
 		}
 		
 		case I2C_STATUS_RX_DATA_ACK: {	
 			
-			payload->protocol.i2c.number_of_bytes--;
+			payload->i2c.number_of_bytes--;
 			
-			(payload->protocol.i2c.data)++;
+			(payload->i2c.data)++;
 			
 			_isr_i2c_callback();
 			
-			if (payload->protocol.i2c.number_of_bytes != 0) {
+			if (payload->i2c.number_of_bytes != 0) {
 				I2C_RX_SEND_ACK();
 			} else {
 				I2C_RX_SEND_NACK();
@@ -320,15 +334,21 @@ ISR(TWI_vect){
 		}
 		
 		case I2C_STATUS_RX_DATA_NACK: {
+			
 			_isr_i2c_callback();
 			_isr_i2c_handle_rx_complete();
+
 			break;
 		}
 		
 		default: {
+			
 			_isr_i2c_free_payload();
+			
 			I2C_STATE = I2C_INACTIVE;
+			
 			I2C_TX_STOP();
+			
 			break;
 		}
     }
