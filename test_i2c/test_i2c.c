@@ -53,12 +53,6 @@
 	
 #define I2C_DEVICE_ADDR 0x27  
 
-/* Callback Flags */
-static bool memory_return_success = 0;
-
-/* Callback Functions */
-static void callback_memory_leak(void) { memory_return_success = 1; };
-	
 static device_t* i2c_device;
 
 static uint8_t dummy_payload[] = { 1, 2, 3, 4, 5 };
