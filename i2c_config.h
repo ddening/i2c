@@ -33,10 +33,4 @@
 #ifndef I2C_CONFIG_H_
 #define I2C_CONFIG_H_
 
-typedef struct i2c_config_t {
-    
-} i2c_config_t;
-
-static i2c_config_t i2c_config = {};
-
 #endif /* I2C_CONFIG_H_ */

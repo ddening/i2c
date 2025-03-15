@@ -3,7 +3,7 @@
 * Author	: Dimitri Dening
 * Created	: 22.12.2022
 * Software	: Microchip Studio V7
-* Hardware	: Atmega1284P
+* Hardware	: Atmega2560
 * License	: MIT License
 * Usage		: see Doxygen manual
 *
@@ -40,12 +40,23 @@
 #include "i2c_io.h"
 #include "i2c_config.h"
 #include "i2c_error_handler.h"
-#include "../ringbuffer/ringbuffer.h"
+#include "ringbuffer.h"
 
-i2c_error_t i2c_init(i2c_config_t*);
+/* Describes a i2c device */
+typedef struct device_t {
+    uint8_t address;
+} device_t;
 
-i2c_error_t i2c_read(void);
+i2c_error_t i2c_init(void);
+
+i2c_error_t i2c_read(payload_t*);
 
 i2c_error_t i2c_write(payload_t*);
+
+device_t* i2c_create_device(uint8_t address);
+
+i2c_error_t i2c_free_device(device_t* device);
+
+extern payload_t* payload_create_i2c(priority_t priority, device_t* device, uint8_t* data, uint8_t number_of_bytes, callback_fn callback);
 
 #endif /* I2C_H_ */
