@@ -42,6 +42,7 @@
 /* Describes possible error states */
 typedef enum i2c_error_t {
     I2C_NO_ERROR,
+	I2C_ERROR_NULL_CONFIG,
 } i2c_error_t;
 
 /**
