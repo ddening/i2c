@@ -87,29 +87,49 @@ static i2c_state_t I2C_STATE;
 #define F_CPU 10000000UL // Hz
 #endif
 
-i2c_error_t i2c_init(void) {
-    
-	uint32_t prescaler;
-	uint32_t scl_target_frequency;
-	uint32_t scl_frequency;
-	
-    // Activate Internal Pullups
-    SET_PIN_OUTPUT(PORTD, SDA);
-    SET_PIN_OUTPUT(PORTD, SCL);
-    
-	TWSR |= (0 << TWPS1) | (0 << TWPS0); // Set prescaler value to 1  
-	
-	// Define Bit Generator Unit
-	prescaler = TWSR & 0x03;
-	scl_target_frequency = 50000;
-	TWBR = (F_CPU - (16 * scl_target_frequency)) / (2 * (1 << prescaler) * (1 << prescaler) * scl_target_frequency); // 4^n = 2^n * 2^n = (1 << n) * (1 << n)
-	scl_frequency = F_CPU / (16 + (2 * TWBR) + (1 << prescaler) * (1 << prescaler)); // TODO: 
-	
-	// TODO: Make sure scl_frequency holds correct value
-	if (scl_frequency > (F_CPU / 10)) {
-		
+static uint8_t i2c_select_prescaler(uint32_t f_cpu, uint32_t f_scl, uint8_t* selected_prescaler) {
+	static const uint8_t prescaler_values[] = {1, 4, 16, 64};
+	uint8_t best_prescaler = 0;  // Default to 1 (TWSR = 0)
+	uint8_t twbr = 255;          // Start with max TWBR
+
+	for (uint8_t i = 0; i < ARRAY_LEN(prescaler_values); i++) {
+		int32_t temp_twbr = (int32_t)(f_cpu - (16 * f_scl)) / (int32_t)(2 * prescaler_values[i] * f_scl);
+
+		if (temp_twbr <= 255 && temp_twbr >= 0) { // Ensure TWBR fits within 8-bit register
+			best_prescaler = i; 
+			twbr = temp_twbr;   
+			break; // Stop checking larger prescalers
+		}
 	}
-	 
+
+	*selected_prescaler = best_prescaler;
+	return twbr;
+}
+
+i2c_error_t i2c_init(i2c_config_t* config) {
+    
+	if (!config) {
+		return I2C_ERROR_NULL_CONFIG;
+	}
+	
+	uint8_t prescaler;
+	uint32_t scl_target_frequency = config->scl_target_frequency;
+	
+	// Activate Internal Pullups if enabled
+	if (config->internal_pullups) {
+		SET_PIN_OUTPUT(PORTD, SDA);
+		SET_PIN_OUTPUT(PORTD, SCL);
+	}
+	
+	// Auto-select the best prescaler & calculate TWBR
+	TWBR = i2c_select_prescaler(F_CPU, scl_target_frequency, &prescaler);
+	
+	// Set prescaler bits in TWSR
+	TWSR = (TWSR & ~0x03) | prescaler; 
+	
+	// Calculate the actual SCL frequency
+	int32_t actual_scl_frequency = F_CPU / (16 + (2 * TWBR * (1 << (2 * prescaler))));
+		 
 	I2C_TWCR_INIT();
 	
     I2C_STATE = I2C_INACTIVE;

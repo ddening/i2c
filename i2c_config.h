@@ -33,4 +33,23 @@
 #ifndef I2C_CONFIG_H_
 #define I2C_CONFIG_H_
 
+#define I2C_STANDARD_MODE 100000  // 100 kHz
+#define I2C_FAST_MODE     400000  // 400 kHz
+#define I2C_HIGH_SPEED   3400000  // 3.4 MHz (not supported on all ATmega)
+
+#define I2C_MASTER_MODE  1
+#define I2C_SLAVE_MODE   0 // Not implemented yet.
+
+#define I2C_DEFAULT_CONFIG { \
+	.scl_target_frequency = I2C_STANDARD_MODE, \
+	.internal_pullups = 1, \
+	.mode = I2C_MASTER_MODE, \
+}
+
+typedef struct {
+	uint32_t scl_target_frequency; // Target I2C frequency (e.g., 100000 for 100 kHz)
+	uint8_t internal_pullups;         // Enable/Disable internal pull-ups
+	uint8_t mode;                  // Master or Slave mode
+} i2c_config_t;
+
 #endif /* I2C_CONFIG_H_ */
