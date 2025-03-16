@@ -90,7 +90,9 @@ void test_i2c(void) {
 	
 	uart_init();
 	
-	i2c_init();
+	i2c_config_t config = I2C_DEFAULT_CONFIG;
+	
+	i2c_init(&config);
     
     i2c_device = i2c_create_device(I2C_DEVICE_ADDR);
 	
